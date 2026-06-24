@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0e1116">
+<title>GPS Attendance &amp; Field Tracking</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1116;--card:#161b22;--line:#283039;--txt:#e6edf3;--muted:#8b97a3;
+    --accent:#3b82f6;--accent2:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;--purple:#7c3aed;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);min-height:100vh}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px;padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right));padding-bottom:max(20px,env(safe-area-inset-bottom))}
+  h1{font-size:20px}.sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+  input,select{width:100%;padding:13px 14px;background:#0c1117;border:1px solid var(--line);border-radius:9px;color:var(--txt);font-size:16px}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  button{cursor:pointer;border:none;border-radius:9px;font-size:14px;font-weight:600;padding:12px 16px;color:#fff;touch-action:manipulation;min-height:44px}
+  .btn-primary{background:var(--accent)}.btn-primary:hover{background:var(--accent2)}
+  .btn-green{background:var(--green)}.btn-red{background:var(--red)}
+  .btn-green:disabled,.btn-red:disabled{background:#374151;cursor:not-allowed;opacity:.7}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  .btn-sm{padding:8px 12px;font-size:13px}
+  .full{width:100%}
+  .msg{font-size:13px;margin-top:12px;padding:10px 12px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(220,38,38,.12);color:#fca5a5}
+  .msg.ok{background:rgba(22,163,74,.12);color:#86efac}
+  .msg.info{background:rgba(59,130,246,.12);color:#93c5fd}
+  .hidden{display:none}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  .who{font-size:14px}.who b{color:var(--accent)}.who .role{color:var(--muted);font-size:12px}
+  nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;position:sticky;top:0;z-index:500;background:var(--bg);padding:8px 0}
+  nav button{background:#0c1117;border:1px solid var(--line);color:var(--muted);font-weight:600;flex:1;min-width:max-content}
+  nav button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:760px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  .stat{background:#0c1117;border:1px solid var(--line);border-radius:11px;padding:14px}
+  .stat .n{font-size:24px;font-weight:700}.stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .map{height:300px;border-radius:11px;border:1px solid var(--line);overflow:hidden;margin-top:14px}
+  #liveMap{height:440px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  td.num{font-variant-numeric:tabular-nums}
+  .scroll{max-height:340px;overflow:auto;-webkit-overflow-scrolling:touch}
+  .map{touch-action:pan-x pan-y}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill.in{background:rgba(22,163,74,.16);color:#86efac}
+  .pill.out{background:rgba(217,119,6,.16);color:#fcd34d}
+  .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+  .toolbar .fld{flex:1;min-width:130px}.toolbar .fld label{margin-top:0}
+  .hint{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.6}
+  h2{font-size:16px;margin-bottom:4px}
+  .sectsub{color:var(--muted);font-size:12px;margin-bottom:12px}
+  .legend{font-size:12px;color:var(--muted);margin-top:10px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .namelbl{background:rgba(20,26,33,.92);border:1px solid #283039;color:#e6edf3;font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;box-shadow:none}
+  .namelbl::before{display:none}
+
+  /* ---- Tablet (iPad) ---- */
+  @media(max-width:900px){
+    .wrap{max-width:760px}
+    #liveMap{height:380px}
+  }
+  /* ---- Phone ---- */
+  @media(max-width:600px){
+    .wrap{padding:14px;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+    h1{font-size:18px}
+    .card{padding:16px;border-radius:12px}
+    nav{gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+    nav::-webkit-scrollbar{display:none}
+    nav button{flex:0 0 auto;padding:11px 14px}
+    .topbar{align-items:flex-start}
+    .btn-green,.btn-red{font-size:16px;padding:16px;min-height:54px}
+    .grid.g2{grid-template-columns:1fr}            /* stack check-in / check-out */
+    .stat .n{font-size:20px}
+    .map{height:240px}
+    #liveMap{height:320px}
+    .toolbar{gap:8px}
+    .toolbar .fld{min-width:100%}                  /* filters stack full-width */
+    .toolbar button{width:100%}
+    th,td{padding:8px 7px}
+    .leaflet-popup-content{font-size:13px}
+  }
+  /* Larger thumb targets for the punch buttons on touch devices */
+  @media(hover:none){
+    button:active{filter:brightness(1.12)}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN -->
+  <div id="loginView">
+    <h1>GPS Attendance &amp; Field Tracking</h1>
+    <p class="sub">Check in / out, record location, and view team dashboards.</p>
+    <div class="card" style="max-width:440px;margin-top:18px">
+      <label>Username</label>
+      <input id="u" placeholder="e.g. alice">
+      <label>Password</label>
+      <input id="p" type="password" placeholder="Password">
+      <button class="btn-primary full" style="margin-top:18px" onclick="doLogin()">Log in</button>
+      <div class="msg" id="loginMsg"></div>
+      <p class="hint">Engineers: <b>alice</b> · <b>bob</b> · <b>carol</b> · <b>dave</b> (pw <b>pass123</b>)<br>Manager (team live map): <b>admin</b> / <b>admin123</b><br>Boss (overview dashboard): <b>boss</b> / <b>boss123</b></p>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="appView" class="hidden">
+    <div class="topbar">
+      <div>
+        <h1>GPS Attendance &amp; Field Tracking</h1>
+        <div class="who">Signed in as <b id="whoName"></b> <span class="role" id="whoRole"></span></div>
+      </div>
+      <button class="btn-ghost btn-sm" onclick="logout()">Log out</button>
+    </div>
+
+    <nav id="nav"></nav>
+
+    <!-- TAB: OVERVIEW (boss) -->
+    <section id="tab-overview" class="tab hidden">
+      <div class="card">
+        <h2>Team Overview Dashboard</h2>
+        <div class="sectsub">All engineers, live status, today's check-in times and field locations. Auto-refreshes every 15s.</div>
+        <div class="grid g4" id="ovStats"></div>
+      </div>
+      <div class="card">
+        <h2>Engineer status — today</h2>
+        <div class="sectsub">Who's on duty, when they checked in, and where they are.</div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Engineer</th><th>Status</th><th>Check-in</th><th>Check-out</th><th>Hrs today</th><th>Last location</th><th>Current task</th></tr></thead>
+            <tbody id="ovBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Where is everyone?</h2>
+        <div class="sectsub">Latest known GPS position of each engineer across different sites.</div>
+        <div class="map" id="ovMap" style="height:440px"></div>
+        <div class="legend"><span class="dot" style="background:var(--green)"></span>On duty (checked in)&nbsp;&nbsp;<span class="dot" style="background:var(--amber)"></span>Off duty (checked out)</div>
+      </div>
+      <div class="card">
+        <h2>Team hours — last 7 periods</h2>
+        <div style="height:280px"><canvas id="ovChart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- TAB: CHECK IN/OUT -->
+    <section id="tab-checkin" class="tab">
+      <div class="card">
+        <h2>Check In / Check Out</h2>
+        <div class="sectsub">Capture your GPS location with a timestamp.</div>
+        <label>Task / site (optional)</label>
+        <input id="taskInput" placeholder="e.g. Site visit — Tower B aircon repair">
+        <div class="grid g2" style="margin-top:16px">
+          <button class="btn-green" id="inBtn" onclick="punch('in')">📍 Check in now</button>
+          <button class="btn-red" id="outBtn" onclick="punch('out')">🏁 Check out</button>
+        </div>
+        <div class="msg" id="ciMsg"></div>
+        <div class="map hidden" id="myMapBox"></div>
+        <p class="hint">GPS works on <b>https://</b> or <b>localhost</b>. Some browsers block location on a direct <b>file://</b> open — serve it locally (<code>python -m http.server</code>) to test.</p>
+      </div>
+    </section>
+
+    <!-- TAB: MY RECORDS -->
+    <section id="tab-records" class="tab hidden">
+      <div class="card">
+        <div class="toolbar">
+          <div class="fld"><label>Show user</label><select id="recUserFilter" onchange="renderRecords()"></select></div>
+          <button class="btn-primary btn-sm" onclick="exportXlsx('events')">⬇ Export events (.xlsx)</button>
+        </div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>User</th><th>Type</th><th>Date</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Acc</th><th>Task</th></tr></thead>
+            <tbody id="recBody"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="recEmpty"></p>
+      </div>
+    </section>
+
+    <!-- TAB: REPORTS -->
+    <section id="tab-reports" class="tab hidden">
+      <div class="card">
+        <div class="toolbar">
+          <div class="fld"><label>Period</label>
+            <select id="period" onchange="renderReports()">
+              <option value="day">Daily</option>
+              <option value="week" selected>Weekly</option>
+              <option value="month">Monthly</option>
+            </select>
+          </div>
+          <div class="fld"><label>User</label><select id="repUserFilter" onchange="renderReports()"></select></div>
+          <button class="btn-primary btn-sm" onclick="exportXlsx('summary')">⬇ Export summary (.xlsx)</button>
+        </div>
+        <div class="grid g4" id="repStats"></div>
+        <div style="height:300px;margin-top:16px"><canvas id="repChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Paired sessions</h2>
+        <div class="sectsub">Each check-in matched to its check-out, with hours worked.</div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>User</th><th>Date</th><th>Check-in</th><th>Check-out</th><th>Hours</th><th>In location</th><th>Task</th></tr></thead>
+            <tbody id="sessBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: LIVE MAP -->
+    <section id="tab-live" class="tab hidden">
+      <div class="card">
+        <h2>Team live locations</h2>
+        <div class="sectsub">Latest known position of each engineer — useful when staff are dispatched to field tasks. Refreshes every 15s.</div>
+        <div class="grid g3" id="liveStats"></div>
+        <div class="map" id="liveMap"></div>
+        <div class="legend"><span class="dot" style="background:var(--green)"></span>Checked in (on duty)&nbsp;&nbsp;<span class="dot" style="background:var(--amber)"></span>Checked out (off duty)</div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* ===================== DATA LAYER ===================== */
+const USERS = {
+  alice:{pw:"pass123",role:"engineer",name:"Alice Tan"},
+  bob:{pw:"pass123",role:"engineer",name:"Bob Lim"},
+  carol:{pw:"pass123",role:"engineer",name:"Carol Ng"},
+  dave:{pw:"pass123",role:"engineer",name:"Dave Wong"},
+  admin:{pw:"admin123",role:"manager",name:"Admin (Manager)"},
+  boss:{pw:"boss123",role:"boss",name:"Boss (Director)"}
+};
+const LS="attendance_events_v3";
+let me=null, myMap=null, myMarker=null, liveMap=null, liveLayer=null, repChart=null, liveTimer=null;
+let ovMap=null, ovLayer=null, ovChart=null;
+function isManager(){return me && (me.role==="manager"||me.role==="boss");}
+
+function events(){try{return JSON.parse(localStorage.getItem(LS))||[]}catch(e){return[]}}
+function save(ev){localStorage.setItem(LS,JSON.stringify(ev))}
+function flash(id,t,k){const e=document.getElementById(id);e.textContent=t;e.className="msg show "+k}
+function fmtDate(d){return d.toLocaleDateString('en-CA')} // YYYY-MM-DD
+function fmtTime(d){return d.toTimeString().slice(0,8)}
+
+/* ---- Seed demo data on first run ---- */
+function seed(){
+  if(events().length) return;
+  const base={alice:[3.1570,101.7120],bob:[3.1390,101.6869],carol:[3.0738,101.5183],dave:[3.0833,101.7167]};
+  const tasks={alice:["Tower B aircon repair","Client site — Mid Valley","Routine inspection — KLCC"],
+               bob:["Server room maintenance","Cabling — Bangsar branch","Generator service"],
+               carol:["Field survey — Shah Alam","Install — Subang depot","Safety audit"],
+               dave:["Pump overhaul — Cheras","Lift service — Bukit Bintang","Wiring check — Ampang"]};
+  const ev=[]; let id=1;
+  const today=new Date(); today.setHours(0,0,0,0);
+  // most recent weekday — engineers "on duty" there for the live demo
+  const recent=new Date(today);
+  while(recent.getDay()===0||recent.getDay()===6) recent.setDate(recent.getDate()-1);
+  const recentStr=fmtDate(recent);
+  for(let back=34; back>=0; back--){
+    const d=new Date(today); d.setDate(d.getDate()-back);
+    const dow=d.getDay(); if(dow===0||dow===6) continue; // weekdays only
+    ["alice","bob","carol","dave"].forEach(u=>{
+      if(Math.random()<0.12) return; // occasional absence
+      const [la,lo]=base[u];
+      const jit=()=>(Math.random()-0.5)*0.03;
+      const inH=8+Math.floor(Math.random()*2), inM=Math.floor(Math.random()*55);
+      const di=new Date(d); di.setHours(inH,inM,0,0);
+      const outH=17+Math.floor(Math.random()*2), outM=Math.floor(Math.random()*55);
+      const dobj=new Date(d); dobj.setHours(outH,outM,0,0);
+      const task=tasks[u][Math.floor(Math.random()*tasks[u].length)];
+      ev.push({id:id++,user:u,type:"in",iso:di.toISOString(),lat:+(la+jit()).toFixed(6),lng:+(lo+jit()).toFixed(6),accuracy:5+Math.floor(Math.random()*25),task});
+      // Keep alice & dave "on duty" on the most recent weekday (no check-out yet)
+      if(!(fmtDate(d)===recentStr && (u==="alice"||u==="dave")))
+        ev.push({id:id++,user:u,type:"out",iso:dobj.toISOString(),lat:+(la+jit()).toFixed(6),lng:+(lo+jit()).toFixed(6),accuracy:5+Math.floor(Math.random()*25),task});
+    });
+  }
+  save(ev);
+}
+
+/* ===================== AUTH ===================== */
+function doLogin(){
+  const u=document.getElementById("u").value.trim().toLowerCase();
+  const p=document.getElementById("p").value;
+  const rec=USERS[u];
+  if(rec && rec.pw===p){
+    me={id:u,...rec};
+    document.getElementById("whoName").textContent=rec.name;
+    document.getElementById("whoRole").textContent="· "+rec.role;
+    document.getElementById("loginView").classList.add("hidden");
+    document.getElementById("appView").classList.remove("hidden");
+    buildNav(); populateFilters(); showTab(isManager()?"overview":"checkin");
+  }else flash("loginMsg","Invalid username or password.","err");
+}
+function logout(){
+  me=null; if(liveTimer)clearInterval(liveTimer);
+  document.getElementById("appView").classList.add("hidden");
+  document.getElementById("loginView").classList.remove("hidden");
+  document.getElementById("u").value="";document.getElementById("p").value="";
+  document.getElementById("loginMsg").className="msg";
+}
+
+/* ===================== NAV ===================== */
+function buildNav(){
+  let tabs;
+  if(isManager()){   // manager & boss: dashboard-first, no personal check-in
+    tabs=[["overview","📊 Dashboard"],["records","Staff Records"],["reports","Reports"],["live","Live Map"]];
+  }else{             // engineers
+    tabs=[["checkin","Check In/Out"],["records","My Records"],["reports","My Hours"]];
+  }
+  const nav=document.getElementById("nav"); nav.innerHTML="";
+  tabs.forEach(([k,lbl])=>{
+    const b=document.createElement("button");b.textContent=lbl;b.id="navbtn-"+k;
+    b.onclick=()=>showTab(k); nav.appendChild(b);
+  });
+}
+function showTab(k){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.add("hidden"));
+  document.getElementById("tab-"+k).classList.remove("hidden");
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.remove("active"));
+  document.getElementById("navbtn-"+k).classList.add("active");
+  if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
+  if(k==="records")renderRecords();
+  if(k==="reports")renderReports();
+  if(k==="overview"){renderOverview();liveTimer=setInterval(renderOverview,15000);}
+  if(k==="live"){renderLive();liveTimer=setInterval(renderLive,15000);}
+  if(k==="checkin"&&myMap)setTimeout(()=>myMap.invalidateSize(),100);
+}
+function populateFilters(){
+  const opts=(all)=>{
+    let h = all?'<option value="__all">All users</option>':'';
+    Object.keys(USERS).filter(u=>USERS[u].role==="engineer").forEach(u=>h+=`<option value="${u}">${USERS[u].name}</option>`);
+    return h;
+  };
+  const isMgr=isManager();
+  const rf=document.getElementById("recUserFilter"),pf=document.getElementById("repUserFilter");
+  rf.innerHTML=opts(isMgr); pf.innerHTML=opts(isMgr);
+  if(!isMgr){rf.value=me.id;pf.value=me.id;}
+}
+
+/* ===================== CHECK IN / OUT ===================== */
+function punch(type){
+  if(!navigator.geolocation){flash("ciMsg","Geolocation not supported by this browser.","err");return;}
+  const ib=document.getElementById("inBtn"),ob=document.getElementById("outBtn");
+  ib.disabled=ob.disabled=true;
+  flash("ciMsg","Getting your location…","info");
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const now=new Date();
+    const rec={id:Date.now(),user:me.id,type,iso:now.toISOString(),
+      lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),
+      accuracy:Math.round(pos.coords.accuracy),task:document.getElementById("taskInput").value.trim()};
+    const ev=events();ev.push(rec);save(ev);
+    flash("ciMsg",`✓ Checked ${type==='in'?'in':'out'} at ${fmtTime(now)} · ${rec.lat}, ${rec.lng}`,"ok");
+    showMyMap(rec.lat,rec.lng,type);
+    ib.disabled=ob.disabled=false;
+  },err=>{
+    const m={1:"Permission denied. Allow location access and retry.",2:"Position unavailable.",3:"Timed out."};
+    flash("ciMsg",m[err.code]||("Location error: "+err.message),"err");
+    ib.disabled=ob.disabled=false;
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+}
+function showMyMap(lat,lng,type){
+  const box=document.getElementById("myMapBox");box.classList.remove("hidden");
+  if(!myMap){myMap=L.map("myMapBox").setView([lat,lng],16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(myMap);}
+  myMap.setView([lat,lng],16);
+  if(myMarker)myMap.removeLayer(myMarker);
+  myMarker=L.circleMarker([lat,lng],{radius:9,color:type==='in'?'#16a34a':'#d97706',fillOpacity:.8})
+    .addTo(myMap).bindPopup(`Checked ${type} here`).openPopup();
+  setTimeout(()=>myMap.invalidateSize(),120);
+}
+
+/* ===================== RECORDS ===================== */
+function visibleEvents(uFilter){
+  let ev=events();
+  if(!isManager()) ev=ev.filter(e=>e.user===me.id);
+  else if(uFilter&&uFilter!=="__all") ev=ev.filter(e=>e.user===uFilter);
+  return ev.sort((a,b)=>new Date(b.iso)-new Date(a.iso));
+}
+function renderRecords(){
+  const f=document.getElementById("recUserFilter").value;
+  const ev=visibleEvents(f),body=document.getElementById("recBody");body.innerHTML="";
+  ev.forEach(e=>{const d=new Date(e.iso);
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${USERS[e.user].name}</td><td><span class="pill ${e.type}">${e.type.toUpperCase()}</span></td>`+
+      `<td>${fmtDate(d)}</td><td>${fmtTime(d)}</td><td class="num">${e.lat}</td><td class="num">${e.lng}</td>`+
+      `<td class="num">±${e.accuracy}m</td><td>${e.task||'—'}</td>`;
+    body.appendChild(tr);});
+  document.getElementById("recEmpty").textContent=ev.length?"":"No records yet.";
+}
+
+/* ===================== SESSIONS & REPORTS ===================== */
+function pairSessions(ev){
+  // pair in->out per user per calendar day
+  const byUserDay={};
+  ev.forEach(e=>{const d=new Date(e.iso);const key=e.user+"|"+fmtDate(d);
+    (byUserDay[key]=byUserDay[key]||[]).push(e);});
+  const sessions=[];
+  Object.entries(byUserDay).forEach(([key,list])=>{
+    list.sort((a,b)=>new Date(a.iso)-new Date(b.iso));
+    const [user,date]=key.split("|");
+    let open=null;
+    list.forEach(e=>{
+      if(e.type==="in"){open=e;}
+      else if(e.type==="out"&&open){
+        const hrs=(new Date(e.iso)-new Date(open.iso))/3.6e6;
+        sessions.push({user,date,inE:open,outE:e,hours:Math.max(0,hrs)});open=null;
+      }
+    });
+    if(open) sessions.push({user,date,inE:open,outE:null,hours:0});
+  });
+  return sessions.sort((a,b)=>new Date(b.inE.iso)-new Date(a.inE.iso));
+}
+function periodKey(dateStr,period){
+  const d=new Date(dateStr+"T00:00:00");
+  if(period==="day")return dateStr;
+  if(period==="month")return dateStr.slice(0,7);
+  // week -> ISO-ish: year-Www (Monday start)
+  const t=new Date(d);const day=(t.getDay()+6)%7;t.setDate(t.getDate()-day);
+  return fmtDate(t)+" wk";
+}
+function filteredSessions(){
+  let ev=events();
+  const f=document.getElementById("repUserFilter").value;
+  if(!isManager())ev=ev.filter(e=>e.user===me.id);
+  else if(f&&f!=="__all")ev=ev.filter(e=>e.user===f);
+  return pairSessions(ev);
+}
+function renderReports(){
+  const period=document.getElementById("period").value;
+  const sessions=filteredSessions();
+  // aggregate
+  const agg={};let totalHrs=0;
+  sessions.forEach(s=>{const k=periodKey(s.date,period);(agg[k]=agg[k]||{hrs:0,days:new Set()});agg[k].hrs+=s.hours;agg[k].days.add(s.user+s.date);totalHrs+=s.hours;});
+  const keys=Object.keys(agg).sort();
+  // stats
+  const completed=sessions.filter(s=>s.outE).length;
+  const avg=completed?totalHrs/completed:0;
+  document.getElementById("repStats").innerHTML=
+    stat(totalHrs.toFixed(1),"Total hours")+
+    stat(sessions.length,"Sessions")+
+    stat(avg.toFixed(1),"Avg hrs/session")+
+    stat(keys.length, period==="day"?"Days":period==="week"?"Weeks":"Months");
+  // chart
+  const ctx=document.getElementById("repChart");
+  if(repChart)repChart.destroy();
+  repChart=new Chart(ctx,{type:"bar",
+    data:{labels:keys,datasets:[{label:"Hours worked",data:keys.map(k=>+agg[k].hrs.toFixed(1)),backgroundColor:"#3b82f6",borderRadius:5}]},
+    options:{plugins:{legend:{labels:{color:"#8b97a3"}}},
+      scales:{x:{ticks:{color:"#8b97a3"},grid:{color:"#283039"}},y:{ticks:{color:"#8b97a3"},grid:{color:"#283039"},beginAtZero:true}}}});
+  // session table
+  const sb=document.getElementById("sessBody");sb.innerHTML="";
+  sessions.forEach(s=>{
+    const inT=fmtTime(new Date(s.inE.iso));
+    const outT=s.outE?fmtTime(new Date(s.outE.iso)):'<span class="pill out">open</span>';
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${USERS[s.user].name}</td><td>${s.date}</td><td>${inT}</td><td>${outT}</td>`+
+      `<td class="num">${s.outE?s.hours.toFixed(2):'—'}</td><td class="num">${s.inE.lat}, ${s.inE.lng}</td><td>${s.inE.task||'—'}</td>`;
+    sb.appendChild(tr);});
+}
+function stat(n,l){return `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`}
+
+/* ===================== LIVE MAP (manager) ===================== */
+function renderLive(){
+  const ev=events();
+  const latest={};
+  ev.forEach(e=>{if(!latest[e.user]||new Date(e.iso)>new Date(latest[e.user].iso))latest[e.user]=e;});
+  const list=Object.values(latest).filter(e=>USERS[e.user]&&USERS[e.user].role==="engineer");
+  const onDuty=list.filter(e=>e.type==="in").length;
+  document.getElementById("liveStats").innerHTML=
+    stat(list.length,"Engineers tracked")+stat(onDuty,"On duty (checked in)")+stat(list.length-onDuty,"Off duty");
+  if(!liveMap){
+    liveMap=L.map("liveMap").setView([3.139,101.6869],11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(liveMap);
+    liveLayer=L.layerGroup().addTo(liveMap);
+  }
+  liveLayer.clearLayers();
+  const bounds=[];
+  list.forEach(e=>{
+    const c=e.type==="in"?"#16a34a":"#d97706";const d=new Date(e.iso);
+    const m=L.circleMarker([e.lat,e.lng],{radius:10,color:c,fillColor:c,fillOpacity:.85,weight:2}).addTo(liveLayer);
+    m.bindPopup(`<b>${USERS[e.user].name}</b><br>${e.type==="in"?"🟢 On duty":"🟡 Off duty"}<br>${fmtDate(d)} ${fmtTime(d)}<br>📋 ${e.task||"—"}<br>📍 ${e.lat}, ${e.lng}`);
+    bounds.push([e.lat,e.lng]);
+  });
+  setTimeout(()=>{liveMap.invalidateSize();if(bounds.length)liveMap.fitBounds(bounds,{padding:[40,40],maxZoom:13});},160);
+}
+
+/* ===================== OVERVIEW (boss dashboard) ===================== */
+function renderOverview(){
+  const ev=events();
+  const today=fmtDate(new Date());
+  const engineers=Object.keys(USERS).filter(u=>USERS[u].role==="engineer");
+  // latest event per engineer
+  const latest={};
+  ev.forEach(e=>{if(USERS[e.user]&&USERS[e.user].role==="engineer"){
+    if(!latest[e.user]||new Date(e.iso)>new Date(latest[e.user].iso))latest[e.user]=e;}});
+  // per-engineer today summary
+  const rows=engineers.map(u=>{
+    const dayEv=ev.filter(e=>e.user===u&&fmtDate(new Date(e.iso))===today);
+    const ins=dayEv.filter(e=>e.type==="in").sort((a,b)=>new Date(a.iso)-new Date(b.iso));
+    const outs=dayEv.filter(e=>e.type==="out").sort((a,b)=>new Date(a.iso)-new Date(b.iso));
+    let hrs=0; pairSessions(dayEv).forEach(s=>hrs+=s.hours);
+    const last=latest[u]||null;
+    return {u,firstIn:ins[0]||null,lastOut:outs[outs.length-1]||null,last,status:last?last.type:null,hrs};
+  });
+  // KPIs
+  const onDuty=rows.filter(r=>r.status==="in").length;
+  const checkedToday=rows.filter(r=>r.firstIn).length;
+  const inMins=rows.filter(r=>r.firstIn).map(r=>{const d=new Date(r.firstIn.iso);return d.getHours()*60+d.getMinutes();});
+  const avg=inMins.length?Math.round(inMins.reduce((a,b)=>a+b,0)/inMins.length):null;
+  const avgStr=avg!=null?`${String(Math.floor(avg/60)).padStart(2,'0')}:${String(avg%60).padStart(2,'0')}`:"—";
+  const wk=periodKey(today,"week");
+  const weekHrs=pairSessions(ev).filter(s=>periodKey(s.date,"week")===wk).reduce((a,s)=>a+s.hours,0);
+  document.getElementById("ovStats").innerHTML=
+    stat(engineers.length,"Engineers")+
+    stat(onDuty,"On duty now")+
+    stat(checkedToday+"/"+engineers.length,"Checked in today")+
+    stat(avgStr,"Avg check-in today")+
+    stat(weekHrs.toFixed(1),"Team hours this week");
+  // status table
+  const body=document.getElementById("ovBody");body.innerHTML="";
+  rows.forEach(r=>{
+    const pill=r.status?`<span class="pill ${r.status}">${r.status==="in"?"ON DUTY":"OFF DUTY"}</span>`:'<span class="pill out">No data today</span>';
+    const inT=r.firstIn?fmtTime(new Date(r.firstIn.iso)):"—";
+    const outT=r.lastOut?fmtTime(new Date(r.lastOut.iso)):"—";
+    const loc=r.last?`${r.last.lat}, ${r.last.lng}`:"—";
+    const task=r.last&&r.last.task?r.last.task:"—";
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${USERS[r.u].name}</td><td>${pill}</td><td>${inT}</td><td>${outT}</td>`+
+      `<td class="num">${r.hrs?r.hrs.toFixed(2):"—"}</td><td class="num">${loc}</td><td>${task}</td>`;
+    body.appendChild(tr);
+  });
+  // map
+  if(!ovMap){
+    ovMap=L.map("ovMap").setView([3.139,101.6869],11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(ovMap);
+    ovLayer=L.layerGroup().addTo(ovMap);
+  }
+  ovLayer.clearLayers();const bounds=[];
+  rows.forEach(r=>{if(!r.last)return;const e=r.last,c=e.type==="in"?"#16a34a":"#d97706",d=new Date(e.iso);
+    L.circleMarker([e.lat,e.lng],{radius:11,color:c,fillColor:c,fillOpacity:.85,weight:2}).addTo(ovLayer)
+      .bindTooltip(USERS[e.user].name,{permanent:true,direction:"top",offset:[0,-8],className:"namelbl"})
+      .bindPopup(`<b>${USERS[e.user].name}</b><br>${e.type==="in"?"🟢 On duty":"🟡 Off duty"}<br>🕒 ${fmtDate(d)} ${fmtTime(d)}<br>📋 ${e.task||"—"}<br>📍 ${e.lat}, ${e.lng}`);
+    bounds.push([e.lat,e.lng]);});
+  setTimeout(()=>{ovMap.invalidateSize();if(bounds.length)ovMap.fitBounds(bounds,{padding:[50,50],maxZoom:12});},160);
+  // team hours chart (weekly, all engineers)
+  const agg={};
+  pairSessions(ev).forEach(s=>{const k=periodKey(s.date,"week");agg[k]=(agg[k]||0)+s.hours;});
+  const keys=Object.keys(agg).sort().slice(-7);
+  if(ovChart)ovChart.destroy();
+  ovChart=new Chart(document.getElementById("ovChart"),{type:"bar",
+    data:{labels:keys,datasets:[{label:"Team hours",data:keys.map(k=>+agg[k].toFixed(1)),backgroundColor:"#7c3aed",borderRadius:5}]},
+    options:{plugins:{legend:{labels:{color:"#8b97a3"}}},
+      scales:{x:{ticks:{color:"#8b97a3"},grid:{color:"#283039"}},y:{ticks:{color:"#8b97a3"},grid:{color:"#283039"},beginAtZero:true}}}});
+}
+
+/* ===================== EXPORT ===================== */
+function exportXlsx(kind){
+  const wb=XLSX.utils.book_new();const stamp=fmtDate(new Date());
+  if(kind==="events"){
+    const ev=visibleEvents(document.getElementById("recUserFilter").value);
+    if(!ev.length){alert("No data to export.");return;}
+    const rows=ev.map(e=>{const d=new Date(e.iso);return{User:USERS[e.user].name,Type:e.type.toUpperCase(),
+      Date:fmtDate(d),Time:fmtTime(d),Latitude:e.lat,Longitude:e.lng,"Accuracy(m)":e.accuracy,Task:e.task||"","Timestamp(ISO)":e.iso};});
+    const ws=XLSX.utils.json_to_sheet(rows);ws["!cols"]=[{wch:12},{wch:6},{wch:12},{wch:10},{wch:12},{wch:12},{wch:10},{wch:28},{wch:24}];
+    XLSX.utils.book_append_sheet(wb,ws,"Events");
+    XLSX.writeFile(wb,`attendance_events_${stamp}.xlsx`);
+  }else{
+    const sessions=filteredSessions();
+    if(!sessions.length){alert("No data to export.");return;}
+    const rows=sessions.map(s=>({User:USERS[s.user].name,Date:s.date,
+      "Check-in":fmtTime(new Date(s.inE.iso)),"Check-out":s.outE?fmtTime(new Date(s.outE.iso)):"OPEN",
+      "Hours":s.outE?+s.hours.toFixed(2):"", "In Lat":s.inE.lat,"In Lng":s.inE.lng,Task:s.inE.task||""}));
+    const ws=XLSX.utils.json_to_sheet(rows);ws["!cols"]=[{wch:12},{wch:12},{wch:10},{wch:10},{wch:8},{wch:12},{wch:12},{wch:28}];
+    XLSX.utils.book_append_sheet(wb,ws,"Sessions");
+    XLSX.writeFile(wb,`attendance_summary_${stamp}.xlsx`);
+  }
+}
+
+/* ===================== INIT ===================== */
+seed();
+</script>
+</body>
+</html>

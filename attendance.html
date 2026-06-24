@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPS Attendance Check-In</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --card:#1a2129; --line:#2a333d; --txt:#e6edf3;
+    --muted:#8b97a3; --accent:#3b82f6; --accent2:#2563eb;
+    --green:#16a34a; --red:#dc2626; --amber:#d97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);
+    min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px}
+  .app{width:100%;max-width:560px}
+  h1{font-size:22px;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+  input{width:100%;padding:11px 13px;background:#0f1620;border:1px solid var(--line);border-radius:9px;
+    color:var(--txt);font-size:15px}
+  input:focus{outline:none;border-color:var(--accent)}
+  button{cursor:pointer;border:none;border-radius:9px;font-size:15px;font-weight:600;padding:12px 16px;color:#fff}
+  .btn-primary{background:var(--accent);width:100%;margin-top:18px}
+  .btn-primary:hover{background:var(--accent2)}
+  .btn-checkin{background:var(--green);width:100%;font-size:17px;padding:16px}
+  .btn-checkin:hover{filter:brightness(1.08)}
+  .btn-checkin:disabled{background:#374151;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  .btn-sm{padding:8px 12px;font-size:13px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row > *{flex:1}
+  .msg{font-size:13px;margin-top:12px;padding:10px 12px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(220,38,38,.12);color:#fca5a5;border:1px solid rgba(220,38,38,.3)}
+  .msg.ok{background:rgba(22,163,74,.12);color:#86efac;border:1px solid rgba(22,163,74,.3)}
+  .msg.info{background:rgba(59,130,246,.12);color:#93c5fd;border:1px solid rgba(59,130,246,.3)}
+  .userbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .userbar .who{font-size:14px}
+  .userbar .who b{color:var(--accent)}
+  .hidden{display:none}
+  .gps-box{background:#0f1620;border:1px solid var(--line);border-radius:9px;padding:14px;margin-top:16px;font-size:13px;line-height:1.7}
+  .gps-box .k{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  td.coord{font-variant-numeric:tabular-nums}
+  .empty{color:var(--muted);text-align:center;padding:24px;font-size:13px}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .toolbar h2{font-size:16px}
+  .count{color:var(--muted);font-size:12px}
+  .hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+  .scroll{max-height:300px;overflow:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>GPS Attendance Check-In</h1>
+  <p class="sub">Log in, capture your location, and export the attendance report.</p>
+
+  <!-- LOGIN -->
+  <div class="card" id="loginCard">
+    <label for="u">Username</label>
+    <input id="u" type="text" autocomplete="username" placeholder="e.g. alice">
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" placeholder="Password">
+    <button class="btn-primary" onclick="doLogin()">Log in</button>
+    <div class="msg" id="loginMsg"></div>
+    <p class="hint">Demo accounts &mdash; <b>alice</b>/<b>pass123</b>, <b>bob</b>/<b>pass123</b>, <b>admin</b>/<b>admin123</b></p>
+  </div>
+
+  <!-- CHECK-IN -->
+  <div class="card hidden" id="checkinCard">
+    <div class="userbar">
+      <div class="who">Signed in as <b id="whoName"></b></div>
+      <button class="btn-ghost btn-sm" onclick="logout()">Log out</button>
+    </div>
+    <button class="btn-checkin" id="checkinBtn" onclick="checkIn()">📍 Check in now</button>
+    <div class="msg" id="ciMsg"></div>
+    <div class="gps-box hidden" id="gpsBox"></div>
+    <p class="hint">Your browser will ask permission to use your location. GPS works on <b>https://</b> sites or <b>localhost</b>; some browsers block it when opening the file directly.</p>
+  </div>
+
+  <!-- REPORT -->
+  <div class="card hidden" id="reportCard">
+    <div class="toolbar">
+      <h2>Attendance Report</h2>
+      <span class="count" id="recCount">0 records</span>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <button class="btn-primary" style="margin-top:0;flex:2" onclick="exportXlsx()">⬇ Download Excel (.xlsx)</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="clearRecords()">Clear all</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>#</th><th>User</th><th>Date</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Acc (m)</th></tr></thead>
+        <tbody id="recBody"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="emptyState">No check-ins yet. Tap “Check in now” above.</div>
+  </div>
+</div>
+
+<script>
+// ---- Demo user store (replace with a real backend for production) ----
+const USERS = { alice:"pass123", bob:"pass123", admin:"admin123" };
+const LS_KEY = "attendance_records_v1";
+let currentUser = null;
+
+function records(){ try{return JSON.parse(localStorage.getItem(LS_KEY))||[]}catch(e){return []} }
+function saveRecords(r){ localStorage.setItem(LS_KEY, JSON.stringify(r)); }
+
+function flash(id, text, kind){
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "msg show " + kind;
+}
+
+// ---- Login ----
+function doLogin(){
+  const u = document.getElementById("u").value.trim();
+  const p = document.getElementById("p").value;
+  if(!u || !p){ flash("loginMsg","Please enter both username and password.","err"); return; }
+  if(USERS[u] && USERS[u] === p){
+    currentUser = u;
+    document.getElementById("whoName").textContent = u;
+    document.getElementById("loginCard").classList.add("hidden");
+    document.getElementById("checkinCard").classList.remove("hidden");
+    document.getElementById("reportCard").classList.remove("hidden");
+    document.getElementById("p").value = "";
+    renderReport();
+  } else {
+    flash("loginMsg","Invalid username or password.","err");
+  }
+}
+
+function logout(){
+  currentUser = null;
+  document.getElementById("checkinCard").classList.add("hidden");
+  document.getElementById("reportCard").classList.add("hidden");
+  document.getElementById("loginCard").classList.remove("hidden");
+  document.getElementById("gpsBox").classList.add("hidden");
+  document.getElementById("ciMsg").className = "msg";
+  document.getElementById("loginMsg").className = "msg";
+  document.getElementById("u").value = "";
+}
+
+// ---- Check-in (GPS capture) ----
+function checkIn(){
+  if(!navigator.geolocation){ flash("ciMsg","Geolocation is not supported by this browser.","err"); return; }
+  const btn = document.getElementById("checkinBtn");
+  btn.disabled = true;
+  flash("ciMsg","Getting your location…","info");
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const now = new Date();
+      const rec = {
+        user: currentUser,
+        date: now.toLocaleDateString(),
+        time: now.toLocaleTimeString(),
+        iso: now.toISOString(),
+        lat: +pos.coords.latitude.toFixed(6),
+        lng: +pos.coords.longitude.toFixed(6),
+        accuracy: Math.round(pos.coords.accuracy)
+      };
+      const r = records(); r.push(rec); saveRecords(r);
+      document.getElementById("gpsBox").classList.remove("hidden");
+      document.getElementById("gpsBox").innerHTML =
+        `<div><span class="k">Date / Time:</span> ${rec.date} ${rec.time}</div>`+
+        `<div><span class="k">Latitude:</span> ${rec.lat}</div>`+
+        `<div><span class="k">Longitude:</span> ${rec.lng}</div>`+
+        `<div><span class="k">Accuracy:</span> ±${rec.accuracy} m</div>`;
+      flash("ciMsg",`✓ Checked in at ${rec.time}.`,"ok");
+      btn.disabled = false;
+      renderReport();
+    },
+    err => {
+      const map = {1:"Permission denied. Allow location access and try again.",2:"Position unavailable.",3:"Request timed out."};
+      flash("ciMsg", map[err.code] || ("Location error: "+err.message), "err");
+      btn.disabled = false;
+    },
+    { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
+  );
+}
+
+// ---- Report ----
+function renderReport(){
+  const r = records();
+  const body = document.getElementById("recBody");
+  body.innerHTML = "";
+  r.forEach((rec,i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i+1}</td><td>${rec.user}</td><td>${rec.date}</td><td>${rec.time}</td>`+
+      `<td class="coord">${rec.lat}</td><td class="coord">${rec.lng}</td><td class="coord">${rec.accuracy}</td>`;
+    body.appendChild(tr);
+  });
+  document.getElementById("recCount").textContent = r.length + (r.length===1?" record":" records");
+  document.getElementById("emptyState").classList.toggle("hidden", r.length>0);
+}
+
+function clearRecords(){
+  if(confirm("Delete all attendance records? This cannot be undone.")){
+    saveRecords([]); renderReport();
+    document.getElementById("gpsBox").classList.add("hidden");
+  }
+}
+
+function exportXlsx(){
+  const r = records();
+  if(r.length===0){ flash("ciMsg","No records to export yet.","err"); return; }
+  const rows = r.map((rec,i)=>({
+    "#": i+1, User: rec.user, Date: rec.date, Time: rec.time,
+    Latitude: rec.lat, Longitude: rec.lng, "Accuracy (m)": rec.accuracy, "Timestamp (ISO)": rec.iso
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = [{wch:5},{wch:12},{wch:14},{wch:14},{wch:14},{wch:14},{wch:12},{wch:26}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+  const stamp = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `attendance_report_${stamp}.xlsx`);
+}
+</script>
+</body>
+</html>
